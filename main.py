@@ -1,15 +1,17 @@
 import os
 import warnings
 import logging
+import gc
 
 # Suppress warnings and logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow logs
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN warnings
-warnings.filterwarnings('ignore', category=FutureWarning)
-warnings.filterwarnings('ignore', category=UserWarning)
-warnings.filterwarnings('ignore', category=DeprecationWarning)
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-logging.getLogger('transformers').setLevel(logging.ERROR)
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'  # Allow GPU memory growth
+os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
+warnings.filterwarnings('ignore')
+logging.getLogger('tensorflow').setLevel(logging.CRITICAL)
+logging.getLogger('transformers').setLevel(logging.CRITICAL)
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 import yfinance as yf
 import numpy as np
@@ -25,13 +27,14 @@ from telegram import Bot
 from datetime import datetime
 import asyncio
 import json
+import psutil
 from google import genai
 
 # -------------------------
 # Telegram Bot Configuration
 # -------------------------
-SEND = os.environ.get("SEND", True)
-SEND_ADVANCED = os.environ.get("SEND_ADVANCED", False)
+SEND = bool(os.environ.get("SEND", 1))
+SEND_ADVANCED = bool(os.environ.get("SEND_ADVANCED", 0))
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8389484759:AAEzi-nJxb-OHwEo3lg5i8m1tv3eiY3Np4k")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
@@ -41,27 +44,39 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
 # -------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyD0xR1DWKj4IANbS2-DF1zdwtStlOclSK8")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
-USE_LLM = os.environ.get("USE_LLM", True)
+USE_LLM = bool(os.environ.get("USE_LLM", True))
 
-target_percent = os.environ.get("TARGET_PERCENT", 0)
+target_percent = int(os.environ.get("TARGET_PERCENT", 0))
 # 2 - %15, 1 - %10, 0 - %5, -1 - %3
 
 target = 0.149 if target_percent == 2 else 0.099 if target_percent == 1 else 0.049 if target_percent == 0 else 0.029
-async def send_telegram_message(message):
+
+def log_memory_usage():
+    """Log current memory usage for monitoring"""
+    try:
+        process = psutil.Process()
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024
+        print(f"🔧 Bellek kullanımı: {memory_mb:.1f} MB", flush=True)
+        return memory_mb
+    except Exception:
+        return 0
+
+async def send_telegram_message(msg):
     """Send message via Telegram bot using python-telegram-bot"""
     if not SEND:
-        print("Telegram mesajları şu anda devre dışı")
+        print("Telegram mesajları şu anda devre dışı", flush=True)
         return False
     try:
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         sent_message = await bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,
-            text=message,
+            text=msg,
             parse_mode='HTML'
         )
         return sent_message.message_id
     except Exception as e:
-        print(f"Telegram mesaj gönderme hatası: {e}")
+        print(f"Telegram mesaj gönderme hatası: {e}", flush=True)
         return False
 
 async def edit_telegram_message(message_id, new_text):
@@ -78,20 +93,20 @@ async def edit_telegram_message(message_id, new_text):
         )
         return True
     except Exception as e:
-        print(f"Telegram mesaj düzenleme hatası: {e}")
+        print(f"Telegram mesaj düzenleme hatası: {e}", flush=True)
         return False
 
-def send_telegram_message_sync(message):
+def send_telegram_message_sync(msg):
     """Synchronous wrapper for sending Telegram messages"""
     if not SEND:
         return False
     try:
         if TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE" and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
-            return asyncio.run(send_telegram_message(message))
+            return asyncio.run(send_telegram_message(msg))
         else:
             return False
     except Exception as e:
-        print(f"Telegram mesaj gönderme hatası: {e}")
+        print(f"Telegram mesaj gönderme hatası: {e}", flush=True)
         return False
 
 def edit_telegram_message_sync(message_id, new_text):
@@ -102,10 +117,10 @@ def edit_telegram_message_sync(message_id, new_text):
         if TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE" and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
             return asyncio.run(edit_telegram_message(message_id, new_text))
         else:
-            print("⚠️  Telegram bot ayarları yapılmamış. Lütfen TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID değerlerini güncelleyin.")
-            print("📦 Gerekli paket: pip install python-telegram-bot")
+            print("⚠️  Telegram bot ayarları yapılmamış. Lütfen TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID değerlerini güncelleyin.", flush=True)
+            print("📦 Gerekli paket: pip install python-telegram-bot", flush=True)
     except Exception as e:
-        print(f"Telegram mesaj gönderme hatası: {e}")
+        print(f"Telegram mesaj gönderme hatası: {e}", flush=True)
         return False
 
 def analyze_with_llm(scan_results):
@@ -152,10 +167,10 @@ Lütfen bu verileri analiz ederek:
 Paragraf aralarında --- kullan, başka hiçbir yerde kullanma, paragraflar çok uzun olursa yazdığın mesaj gönderilmeyecek
 
 ÖNEMLI: Yanıtında formatlamak için HTML etiketleri kullan:
-- Kalın yazı için: <b>metin</b>
+- Kalın yazı için her zaman: <b>metin</b>
 - İtalik için: <i>metin</i>
-- Hisse kodları ve önemli bilgiler için <b> kullan
-- Markdown (**bold**) kullanma, sadece HTML kullan
+- Hisse kodları ve önemli bilgiler için <b> kullan örn: THYAO yada BUY
+- Ne olursa olsun Markdown (**bold**) kullanma, sadece HTML kullan
 
 Art arda aşırı fazla yeni satırdan kaçın en fazla arka arkaya iki tane!
 Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. Daha çok resmi değil samimi bir dil kullan, sanki olar aile üyelerinmiş gibi. Finansal tavsiye değil, sadece teknik analiz yorumu olduğunu belirt.
@@ -166,53 +181,83 @@ Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. D
         )
         return response.text
     except Exception as e:
-        print(f"❌ LLM analizi hatası: {str(e)}")
+        print(f"❌ LLM analizi hatası: {str(e)}", flush=True)
         return None
 
 # -------------------------
 # 1. Haber Sentiment Analizi
 # -------------------------
 # noinspection PyTypeChecker
-sentiment_model = pipeline("sentiment-analysis", model="savasy/bert-base-turkish-sentiment-cased")
+# Lazy loading for memory efficiency
+sentiment_model = None
+
+
+def get_sentiment_model():
+    """Lazy load sentiment model to save memory"""
+    global sentiment_model
+    if sentiment_model is None:
+        try:
+            # noinspection PyTypeChecker
+            sentiment_model = pipeline("sentiment-analysis", model="savasy/bert-base-turkish-sentiment-cased", device=-1, model_kwargs={"torch_dtype": "float16"})
+        except Exception as e:
+            print(f"⚠️ Sentiment model yüklenemedi: {e}", flush=True)
+            return None
+    return sentiment_model
+
 
 def get_news_sentiment(query):
-    feed_url = f"https://news.google.com/rss/search?q={query}+site:kap.org.tr&hl=tr&gl=TR&ceid=TR:tr"
-    feed = feedparser.parse(feed_url)
-    if not feed.entries:
-        return 0.5  # veri yoksa nötr
-    scores = []
-    for entry in feed.entries:
-        result = sentiment_model(entry.title)[0]
-        label = result["label"]
-        score = result["score"]
-        if label.lower() == "positive":
-            scores.append(score)
-        elif label.lower() == "negative":
-            scores.append(1 - score)
-        else:
-            scores.append(0.5)
-    return np.mean(scores)
+    """Get news sentiment with memory optimization"""
+    try:
+        model = get_sentiment_model()
+        if model is None:
+            return 0.5  # Fallback to neutral
+
+        feed_url = f"https://news.google.com/rss/search?q={query}+site:kap.org.tr&hl=tr&gl=TR&ceid=TR:tr"
+        feed = feedparser.parse(feed_url)
+        if not feed.entries:
+            return 0.5  # veri yoksa nötr
+
+        scores = []
+        # Limit to first 5 entries to save processing time
+        for entry in feed.entries[:5]:
+            try:
+                result = model(entry.title[:200])[0]  # Limit text length
+                label = result["label"]
+                score = result["score"]
+                if label.lower() == "positive":
+                    scores.append(score)
+                elif label.lower() == "negative":
+                    scores.append(1 - score)
+                else:
+                    scores.append(0.5)
+            except Exception:
+                scores.append(0.5)  # Neutral on error
+
+        return np.mean(scores) if scores else 0.5
+    except Exception:
+        return 0.5  # Fallback to neutral
 
 def analyze_ticker(ticker):
     """Analyze a single ticker and return prediction probability"""
     try:
-        print(f"\n{ticker.replace('.IS', '')} analiz ediliyor...")
+        print(f"\n{ticker.replace('.IS', '')} analiz ediliyor...", flush=True)
         
         # -------------------------
         # 2. Fiyat Verisi ve Teknikler
         # -------------------------
         try:
-            data = yf.download(ticker, period="2y", progress=False)
+            data = yf.download(ticker, period="1y", progress=False,
+                               auto_adjust=True, threads=False)
         except Exception as e:
-            print(f"❌ {ticker.replace('.IS', '')}: Veri indirme hatası - {str(e)}")
+            print(f"❌ {ticker.replace('.IS', '')}: Veri indirme hatası - {str(e)}", flush=True)
             return None
         
         if data.empty:
-            print(f"❌ {ticker.replace('.IS', '')}: Veri bulunamadı!")
+            print(f"❌ {ticker.replace('.IS', '')}: Veri bulunamadı!", flush=True)
             return None
             
         if len(data) < 100:
-            print(f"❌ {ticker.replace('.IS', '')}: Yetersiz veri ({len(data)} gün)")
+            print(f"❌ {ticker.replace('.IS', '')}: Yetersiz veri ({len(data)} gün)", flush=True)
             return None
             
         # Technical indicators with error handling
@@ -224,14 +269,14 @@ def analyze_ticker(ticker):
             data["boll_high"] = ta.volatility.BollingerBands(data["Close"].squeeze()).bollinger_hband()
             data["boll_low"] = ta.volatility.BollingerBands(data["Close"].squeeze()).bollinger_lband()
         except Exception as e:
-            print(f"❌ {ticker.replace('.IS', '')}: Teknik gösterge hesaplama hatası - {str(e)}")
+            print(f"❌ {ticker.replace('.IS', '')}: Teknik gösterge hesaplama hatası - {str(e)}", flush=True)
             return None
 
         # Hedef değişken: ertesi gün tavan (%5 artış)
         try:
             data["target"] = (data["Close"].pct_change().shift(-1) >= target).astype(int)
         except Exception as e:
-            print(f"❌ {ticker}: Hedef değişken hesaplama hatası - {str(e)}")
+            print(f"❌ {ticker}: Hedef değişken hesaplama hatası - {str(e)}", flush=True)
             return None
 
         # Sentiment sütunu
@@ -241,22 +286,22 @@ def analyze_ticker(ticker):
                 if i == len(data)-1:  # son gün için canlı sentiment
                     try:
                         sentiment_score = get_news_sentiment(ticker.split(".")[0])
-                        print(f"  📊 {ticker.replace('.IS', '')}: Son gün sentiment puanı: %{sentiment_score*100:.1f}")
+                        print(f"  📊 {ticker.replace('.IS', '')}: Son gün sentiment puanı: %{sentiment_score*100:.1f}", flush=True)
                         data.iloc[i, data.columns.get_loc("sentiment")] = sentiment_score
                     except Exception as e:
-                        print(f"⚠️ {ticker}: Sentiment analizi hatası - {str(e)}, nötr değer kullanılıyor")
+                        print(f"⚠️ {ticker}: Sentiment analizi hatası - {str(e)}, nötr değer kullanılıyor", flush=True)
                         data.iloc[i, data.columns.get_loc("sentiment")] = 0.5
                 else:
                     data.iloc[i, data.columns.get_loc("sentiment")] = 0.5
             
         except Exception as e:
-            print(f"❌ {ticker}: Sentiment hesaplama hatası - {str(e)}")
+            print(f"❌ {ticker}: Sentiment hesaplama hatası - {str(e)}", flush=True)
             return None
 
         data = data.dropna()
         
         if len(data) < 50:  # Yeterli veri yoksa
-            print(f"❌ {ticker.replace('.IS', '')}: Temizleme sonrası yetersiz veri ({len(data)} satır)")
+            print(f"❌ {ticker.replace('.IS', '')}: Temizleme sonrası yetersiz veri ({len(data)} satır)", flush=True)
             return None
 
         # -------------------------
@@ -274,7 +319,7 @@ def analyze_ticker(ticker):
             X_lstm, y_lstm = np.array(X_lstm), np.array(y_lstm)
 
             if len(X_lstm) < 20:  # Yeterli veri yoksa
-                print(f"❌ {ticker}: LSTM eğitimi için yetersiz veri ({len(X_lstm)} örnek)")
+                print(f"❌ {ticker}: LSTM eğitimi için yetersiz veri ({len(X_lstm)} örnek)", flush=True)
                 return None
 
             split_idx = int(len(X_lstm) * 0.8)
@@ -284,10 +329,10 @@ def analyze_ticker(ticker):
             # Check if we have positive examples in training data
             positive_examples = np.sum(y_train_lstm)
             total_examples = len(y_train_lstm)
-            print(f"  📊 {ticker.replace('.IS', '')}: {positive_examples}/{total_examples} pozitif örnek (%{positive_examples/total_examples*100:.1f})")
+            print(f"  📊 {ticker.replace('.IS', '')}: {positive_examples}/{total_examples} pozitif örnek (%{positive_examples/total_examples*100:.1f})", flush=True)
             
             if positive_examples == 0:
-                print(f"  ⚠️ {ticker.replace('.IS', '')}: Hiç pozitif örnek yok, LSTM baseline kullanılıyor!")
+                print(f"  ⚠️ {ticker.replace('.IS', '')}: Hiç pozitif örnek yok, LSTM baseline kullanılıyor!", flush=True)
                 lstm_prob = 0.01  # Very low but not zero
             else:
                 lstm_model = Sequential()
@@ -304,7 +349,7 @@ def analyze_ticker(ticker):
                 lstm_prob = lstm_model.predict(last_lstm_input, verbose=0)[0][0]
                 
         except Exception as e:
-            print(f"❌ {ticker}: LSTM model hatası - {str(e)}")
+            print(f"❌ {ticker}: LSTM model hatası - {str(e)}", flush=True)
             return None
 
         # -------------------------
@@ -327,7 +372,7 @@ def analyze_ticker(ticker):
             xgb_prob = xgb_model.predict_proba(last_xgb_input)[0][1]
             
         except Exception as e:
-            print(f"❌ {ticker}: XGBoost model hatası - {str(e)}")
+            print(f"❌ {ticker}: XGBoost model hatası - {str(e)}", flush=True)
             return None
 
         final_prob = (lstm_prob + xgb_prob) / 2
@@ -343,7 +388,7 @@ def analyze_ticker(ticker):
         }
         
     except Exception as e:
-        print(f"{ticker} analiz hatası: {e}")
+        print(f"{ticker} analiz hatası: {e}", flush=True)
         return None
 
 def quick_screen_ticker(ticker):
@@ -394,12 +439,12 @@ def quick_screen_ticker(ticker):
         }
         
     except Exception as e:
-        print(f"⚠️ {ticker}: Hızlı tarama hatası - {str(e)}")
+        print(f"⚠️ {ticker}: Hızlı tarama hatası - {str(e)}", flush=True)
         return None
 
 def analyze_multiple_tickers(tickers):
     """Two-stage analysis: quick screening then detailed analysis"""
-    print("🔍 Hızlı tarama başlatılıyor...")
+    print("🔍 Hızlı tarama başlatılıyor...", flush=True)
     send_telegram_message_sync("🔍 Hızlı tarama başlatılıyor...")
     
     # Stage 1: Quick screening
@@ -420,13 +465,13 @@ def analyze_multiple_tickers(tickers):
     if len(promising_tickers) > 20:  # Cap at 20 for efficiency
         promising_tickers = promising_tickers[:20]
     
-    print(f"📊 Tarama tamamlandı: {len(screening_results)} hisse tarandı")
-    print(f"🎯 Detaylı analiz için seçilen: {len(promising_tickers)} hisse")
+    print(f"📊 Tarama tamamlandı: {len(screening_results)} hisse tarandı", flush=True)
+    print(f"🎯 Detaylı analiz için seçilen: {len(promising_tickers)} hisse", flush=True)
     send_telegram_message_sync(f"📊 Tarama tamamlandı: {len(screening_results)} hisse tarandı")
     send_telegram_message_sync(f"🎯 Detaylı analiz için seçilen: {len(promising_tickers)} hisse")
     
     # Show screening results
-    print("\n📋 Hızlı Tarama Sonuçları(İlk 10):")
+    print("\n📋 Hızlı Tarama Sonuçları(İlk 10):", flush=True)
     msg = "📋 Hızlı Tarama Sonuçları(İlk 10):\n"
     for result in screening_results[:10]:  # Show top 10
         ticker = result["ticker"]
@@ -437,13 +482,13 @@ def analyze_multiple_tickers(tickers):
         
         status = "🎯" if result in promising_tickers else "📊"
         line = f"{status} {ticker.replace('.IS', '')}: Skor={score}/4, RSI={rsi:.1f}, Momentum={momentum:+.1f}%, Hacim={volume_ratio:.1f}x"
-        print(line)
+        print(line, flush=True)
         msg += f"{line}\n"
     if SEND_ADVANCED:
         send_telegram_message_sync(msg)
     
     # Stage 2: Detailed analysis on promising tickers with live progress
-    print(f"\n🔬 Detaylı analiz başlatılıyor...")
+    print(f"\n🔬 Detaylı analiz başlatılıyor...", flush=True)
     detailed_results = []
     
     # Send initial progress message
@@ -478,7 +523,7 @@ def analyze_multiple_tickers(tickers):
             detailed_result["volume_ratio"] = result["volume_ratio"]
             detailed_result["momentum_5d"] = result["momentum_5d"]
             detailed_results.append(detailed_result)
-    
+            gc.collect()
     # Final progress update
     if progress_message_id:
         final_text = (
@@ -497,8 +542,8 @@ def format_telegram_message(scan_results):
     if not scan_results:
         return "❌ Hiçbir hisse analiz edilemedi!"
     
-    message = f"📊 <b>Borsa Tahmin Raporu</b>\n"
-    message += f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+    msg = f"📊 <b>Borsa Tahmin Raporu</b>\n"
+    msg += f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
     
     # Sort by probability (highest first)
     scan_results.sort(key=lambda x: x["probability"], reverse=True)
@@ -515,21 +560,21 @@ def format_telegram_message(scan_results):
         else:
             emoji = "📉"
             
-        message += f"{emoji} <b>{ticker.replace('.IS', '')}</b>\n"
-        message += f"💰 Fiyat: {price:.2f} TL\n"
-        message += f"📊 Tavan Olasılığı: %{prob:.1f}\n"
-        message += f"🤖 LSTM: %{result['lstm_prob']*100:.1f} | XGB: %{result['xgb_prob']*100:.1f}\n"
+        msg += f"{emoji} <b>{ticker.replace('.IS', '')}</b>\n"
+        msg += f"💰 Fiyat: {price:.2f} TL\n"
+        msg += f"📊 Tavan Olasılığı: %{prob:.1f}\n"
+        msg += f"🤖 LSTM: %{result['lstm_prob'] * 100:.1f} | XGB: %{result['xgb_prob'] * 100:.1f}\n"
         
         # Add screening info if available
         if 'screening_score' in result:
             score = result['screening_score']
             volume_ratio = result.get('volume_ratio', 0)
             momentum = result.get('momentum_5d', 0)
-            message += f"🔍 Tarama: {score}/4 | Hacim: {volume_ratio:.1f}x | Momentum: {momentum:+.1f}%\n"
+            msg += f"🔍 Tarama: {score}/4 | Hacim: {volume_ratio:.1f}x | Momentum: {momentum:+.1f}%\n"
         
-        message += "\n"
+        msg += "\n"
     
-    return message
+    return msg
 
 # -------------------------
 # Ana Program
@@ -605,9 +650,9 @@ if __name__ == "__main__":
     # Remove duplicates and sort
     TICKERS = sorted(list(set(TICKERS)))
     
-    print("🚀 Çoklu hisse analizi başlatılıyor...")
-    print(f"🚀 Hedef: %{target * 100:.1f} artış")
-    print(f"📋 Analiz edilecek hisseler: {', '.join([t.replace('.IS', '') for t in TICKERS])}")
+    print("🚀 Çoklu hisse analizi başlatılıyor...", flush=True)
+    print(f"🚀 Hedef: %{target * 100:.1f} artış", flush=True)
+    print(f"📋 Analiz edilecek hisseler: {', '.join([t.replace('.IS', '') for t in TICKERS])}", flush=True)
     send_telegram_message_sync("🚀 Çoklu hisse analizi başlatılıyor...")
     send_telegram_message_sync(f"🚀 Hedef: %{target * 100:.1f} artış")
     send_telegram_message_sync(f"📋 {len(TICKERS)} hisse analiz edilecek")
@@ -616,19 +661,19 @@ if __name__ == "__main__":
     
     # Sonuçları göster
     if results:
-        print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!")
+        print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!", flush=True)
         
         # LLM ile analiz et ve öneriler al
-        print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...")
+        print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...", flush=True)
         send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
         
         llm_analysis = analyze_with_llm(results)
         
         if llm_analysis:
-            print("\n" + "="*50)
-            print("LLM ANALİZ VE ÖNERİLER:")
-            print("="*50)
-            print(llm_analysis)
+            print("\n" + "="*50, flush=True)
+            print("LLM ANALİZ VE ÖNERİLER:", flush=True)
+            print("="*50, flush=True)
+            print(llm_analysis, flush=True)
             
             # LLM analizini parçalara bölerek Telegram'a gönder
             header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
@@ -638,26 +683,26 @@ if __name__ == "__main__":
             
             # Send all messages
             for i, message in enumerate(paragraphs):
-                print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...")
+                print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...", flush=True)
                 send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else message)
             
             if SEND_ADVANCED:
                 # İsteğe bağlı: Ham verileri de gönder
-                print("\n📊 Ham analiz verileri de gönderiliyor...")
+                print("\n📊 Ham analiz verileri de gönderiliyor...", flush=True)
                 raw_data_message = format_telegram_message(results)
                 raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
                 send_telegram_message_sync(raw_data_message)
             
         else:
             if SEND_ADVANCED:
-                print("❌ LLM analizi başarısız, ham veriler gönderiliyor...")
+                print("❌ LLM analizi başarısız, ham veriler gönderiliyor...", flush=True)
                 # Fallback to original telegram message
                 telegram_message = format_telegram_message(results)
                 send_telegram_message_sync(telegram_message)
-            print("❌ LLM analizi başarısız...")
+            print("❌ LLM analizi başarısız...", flush=True)
             
             send_telegram_message_sync("❌ LLM analizi başarısız!")
             send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
     else:
-        print("❌ Hiçbir hisse analiz edilemedi!")
+        print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
         send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
