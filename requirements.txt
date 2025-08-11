@@ -1,0 +1,28 @@
+# Stock Market Analysis and Telegram Bot Requirements
+
+# Data Analysis and Machine Learning
+yfinance>=0.2.18
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+xgboost>=1.7.0
+
+# Technical Analysis
+ta>=0.10.2
+
+# Deep Learning
+tensorflow>=2.13.0
+keras>=2.13.0
+
+# Natural Language Processing
+transformers>=4.30.0
+torch>=2.0.0
+
+# News Feed Processing
+feedparser>=6.0.10
+
+# Telegram Bot
+python-telegram-bot>=20.0
+
+# Utilities
+requests>=2.31.0
