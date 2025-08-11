@@ -462,8 +462,8 @@ def analyze_multiple_tickers(tickers):
     promising_tickers = [r for r in screening_results if r["score"] >= 3]
     if len(promising_tickers) < 5:
         promising_tickers = [r for r in screening_results if r["score"] >= 2][:15]
-    if len(promising_tickers) > 20:  # Cap at 20 for efficiency
-        promising_tickers = promising_tickers[:20]
+    if len(promising_tickers) > 20:  # Cap at 10 for efficiency
+        promising_tickers = promising_tickers[:10]
     
     print(f"📊 Tarama tamamlandı: {len(screening_results)} hisse tarandı", flush=True)
     print(f"🎯 Detaylı analiz için seçilen: {len(promising_tickers)} hisse", flush=True)
