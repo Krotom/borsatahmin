@@ -1,5 +1,8 @@
 # Stock Market Analysis and Telegram Bot Requirements
 
+# LLM API
+google-genai
+
 # Data Analysis and Machine Learning
 yfinance
 numpy

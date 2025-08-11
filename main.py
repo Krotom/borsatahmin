@@ -24,19 +24,26 @@ import xgboost as xgb
 from telegram import Bot
 from datetime import datetime
 import asyncio
+import json
+from google import genai
 
 # -------------------------
 # Telegram Bot Configuration
 # -------------------------
-TELEGRAM_BOT_TOKEN = "8389484759:AAEzi-nJxb-OHwEo3lg5i8m1tv3eiY3Np4k"
-TELEGRAM_CHAT_ID = "-1002758348312" 
-SEND = True
+SEND = os.environ.get("SEND", True)
+SEND_ADVANCED = os.environ.get("SEND_ADVANCED", False)
 
-if TELEGRAM_BOT_TOKEN is None or TELEGRAM_CHAT_ID is None:
-    TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-    TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8389484759:AAEzi-nJxb-OHwEo3lg5i8m1tv3eiY3Np4k")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
 
-target_percent = 0
+# -------------------------
+# LLM API Configuration (Google Gemini)
+# -------------------------
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyD0xR1DWKj4IANbS2-DF1zdwtStlOclSK8")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
+USE_LLM = os.environ.get("USE_LLM", True)
+
+target_percent = os.environ.get("TARGET_PERCENT", 0)
 # 2 - %15, 1 - %10, 0 - %5, -1 - %3
 
 target = 0.149 if target_percent == 2 else 0.099 if target_percent == 1 else 0.049 if target_percent == 0 else 0.029
@@ -100,6 +107,67 @@ def edit_telegram_message_sync(message_id, new_text):
     except Exception as e:
         print(f"Telegram mesaj gönderme hatası: {e}")
         return False
+
+def analyze_with_llm(scan_results):
+    """Send analysis results to LLM for summarization and buy-sell recommendations"""
+    if not USE_LLM or not scan_results:
+        return None
+    
+    try:
+        # Configure Gemini API
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Prepare data for LLM analysis
+        analysis_data = []
+        for result in scan_results:
+            ticker_name = result["ticker"].replace('.IS', '')
+            analysis_data.append({
+                "stock": ticker_name,
+                "probability": f"{result['probability']*100:.1f}%",
+                "current_price": f"{result['current_price']:.2f} TL",
+                "lstm_prediction": f"{result['lstm_prob']*100:.1f}%",
+                "xgboost_prediction": f"{result['xgb_prob']*100:.1f}%",
+                "screening_score": result.get('screening_score', 'N/A'),
+                "volume_ratio": f"{result.get('volume_ratio', 0):.1f}x",
+                "momentum_5d": f"{result.get('momentum_5d', 0):+.1f}%"
+            })
+        
+        # Create prompt for LLM
+        prompt = f"""
+Sen bir finansal analiz uzmanısın. Teknik analiz verilerini yorumlayarak yatırımcılara rehberlik ediyorsun. Yanıtların objektif, veri odaklı ve risk uyarıları içermelidir.
+
+Aşağıda Türk borsasından {len(analysis_data)} hissenin teknik analiz sonuçları bulunmaktadır. 
+Her hisse için LSTM ve XGBoost modelleri kullanılarak %{target*100:.1f} artış olasılığı hesaplanmıştır.
+
+Analiz Sonuçları:
+{json.dumps(analysis_data, indent=2, ensure_ascii=False)}
+
+Lütfen bu verileri analiz ederek:
+1. Genel piyasa durumu hakkında kısa bir özet
+2. En yüksek potansiyelli 3-5 hisse için BUY önerisi ve nedenleri
+3. Riskli görünen hisseler için SELL/HOLD önerisi
+4. Genel yatırım stratejisi önerisi
+5. Risk yönetimi tavsiyeleri
+
+Paragraf aralarında --- kullan, başka hiçbir yerde kullanma, paragraflar çok uzun olursa yazdığın mesaj gönderilmeyecek
+
+ÖNEMLI: Yanıtında formatlamak için HTML etiketleri kullan:
+- Kalın yazı için: <b>metin</b>
+- İtalik için: <i>metin</i>
+- Hisse kodları ve önemli bilgiler için <b> kullan
+- Markdown (**bold**) kullanma, sadece HTML kullan
+
+Art arda aşırı fazla yeni satırdan kaçın en fazla arka arkaya iki tane!
+Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. Daha çok resmi değil samimi bir dil kullan, sanki olar aile üyelerinmiş gibi. Finansal tavsiye değil, sadece teknik analiz yorumu olduğunu belirt.
+"""
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL, contents=prompt
+        )
+        return response.text
+    except Exception as e:
+        print(f"❌ LLM analizi hatası: {str(e)}")
+        return None
 
 # -------------------------
 # 1. Haber Sentiment Analizi
@@ -173,7 +241,7 @@ def analyze_ticker(ticker):
                 if i == len(data)-1:  # son gün için canlı sentiment
                     try:
                         sentiment_score = get_news_sentiment(ticker.split(".")[0])
-                        print(f"  📊 {ticker}: Son gün sentiment puanı: %{sentiment_score*100:.1f}")
+                        print(f"  📊 {ticker.replace('.IS', '')}: Son gün sentiment puanı: %{sentiment_score*100:.1f}")
                         data.iloc[i, data.columns.get_loc("sentiment")] = sentiment_score
                     except Exception as e:
                         print(f"⚠️ {ticker}: Sentiment analizi hatası - {str(e)}, nötr değer kullanılıyor")
@@ -188,7 +256,7 @@ def analyze_ticker(ticker):
         data = data.dropna()
         
         if len(data) < 50:  # Yeterli veri yoksa
-            print(f"❌ {ticker}: Temizleme sonrası yetersiz veri ({len(data)} satır)")
+            print(f"❌ {ticker.replace('.IS', '')}: Temizleme sonrası yetersiz veri ({len(data)} satır)")
             return None
 
         # -------------------------
@@ -331,8 +399,8 @@ def quick_screen_ticker(ticker):
 
 def analyze_multiple_tickers(tickers):
     """Two-stage analysis: quick screening then detailed analysis"""
-    print("🔍 1. Aşama: Hızlı tarama başlatılıyor...")
-    send_telegram_message_sync("🔍 1. Aşama: Hızlı tarama başlatılıyor...")
+    print("🔍 Hızlı tarama başlatılıyor...")
+    send_telegram_message_sync("🔍 Hızlı tarama başlatılıyor...")
     
     # Stage 1: Quick screening
     screening_results = []
@@ -371,10 +439,11 @@ def analyze_multiple_tickers(tickers):
         line = f"{status} {ticker.replace('.IS', '')}: Skor={score}/4, RSI={rsi:.1f}, Momentum={momentum:+.1f}%, Hacim={volume_ratio:.1f}x"
         print(line)
         msg += f"{line}\n"
-    send_telegram_message_sync(msg)
+    if SEND_ADVANCED:
+        send_telegram_message_sync(msg)
     
     # Stage 2: Detailed analysis on promising tickers with live progress
-    print(f"\n🔬 2. Aşama: Detaylı analiz başlatılıyor...")
+    print(f"\n🔬 Detaylı analiz başlatılıyor...")
     detailed_results = []
     
     # Send initial progress message
@@ -549,13 +618,46 @@ if __name__ == "__main__":
     if results:
         print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!")
         
-        # Telegram mesajı hazırla
-        telegram_message = format_telegram_message(results)
-        print("\n" + "="*50)
-        print("TELEGRAM MESAJI:")
-        print("="*50)
-        print(telegram_message.replace("<b>", "").replace("</b>", ""))
+        # LLM ile analiz et ve öneriler al
+        print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...")
+        send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
         
-        send_telegram_message_sync(telegram_message)
+        llm_analysis = analyze_with_llm(results)
+        
+        if llm_analysis:
+            print("\n" + "="*50)
+            print("LLM ANALİZ VE ÖNERİLER:")
+            print("="*50)
+            print(llm_analysis)
+            
+            # LLM analizini parçalara bölerek Telegram'a gönder
+            header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            footer = f"\n📊 <i>Bu analiz {len(results)} hissenin teknik verilerine dayanmaktadır.</i>\n⚠️ <i>Bu bir yatırım tavsiyesi değil, sadece teknik analiz yorumudur.</i>"
+            
+            paragraphs = llm_analysis.split('---')
+            
+            # Send all messages
+            for i, message in enumerate(paragraphs):
+                print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...")
+                send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else message)
+            
+            if SEND_ADVANCED:
+                # İsteğe bağlı: Ham verileri de gönder
+                print("\n📊 Ham analiz verileri de gönderiliyor...")
+                raw_data_message = format_telegram_message(results)
+                raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
+                send_telegram_message_sync(raw_data_message)
+            
+        else:
+            if SEND_ADVANCED:
+                print("❌ LLM analizi başarısız, ham veriler gönderiliyor...")
+                # Fallback to original telegram message
+                telegram_message = format_telegram_message(results)
+                send_telegram_message_sync(telegram_message)
+            print("❌ LLM analizi başarısız...")
+            
+            send_telegram_message_sync("❌ LLM analizi başarısız!")
+            send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
     else:
         print("❌ Hiçbir hisse analiz edilemedi!")
+        send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
