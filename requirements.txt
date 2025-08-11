@@ -12,6 +12,7 @@ ta
 
 # Deep Learning
 tensorflow
+tf-keras
 keras
 
 # Natural Language Processing
