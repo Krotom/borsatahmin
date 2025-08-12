@@ -1,6 +1,7 @@
 # Start time measurement
 import time
 start_time = time.time()
+print("Toplam süre sayacı başlatıldı...", flush=True)
 
 import os
 import warnings
@@ -32,6 +33,7 @@ from telegram import Bot
 from datetime import datetime
 from typing import Any
 import requests
+from threading import Event
 import asyncio
 import json
 import psutil
@@ -53,21 +55,26 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyD0xR1DWKj4IANbS2-DF1zdw
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
 USE_LLM = int(os.environ.get("USE_LLM", 1))
 
+EXIT = Event()
+
 target_percent = int(os.environ.get("TARGET_PERCENT", 0))
 # 2 - %15, 1 - %10, 0 - %5, -1 - %3
 
 target = 0.149 if target_percent == 2 else 0.099 if target_percent == 1 else 0.049 if target_percent == 0 else 0.029
 
-def log_memory_usage():
+async def log_memory_usage():
     """Log current memory usage for monitoring"""
-    try:
-        process = psutil.Process()
-        memory_info = process.memory_info()
-        memory_mb = memory_info.rss / 1024 / 1024
-        print(f"🔧 Bellek kullanımı: {memory_mb:.1f} MB", flush=True)
-        return memory_mb
-    except Exception:
-        return 0
+    while not EXIT.is_set():
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
+            print(f"🔧 Bellek kullanımı: {memory_mb:.1f} MB", flush=True)
+        except Exception:
+            pass
+        await asyncio.sleep(5)
+
+asyncio.create_task(log_memory_usage())
 
 # Data caching system
 CACHE_DIR = Path("cache")
@@ -182,7 +189,6 @@ def analyze_with_llm(scan_results):
     """Send analysis results to LLM for summarization and buy-sell recommendations"""
     if not USE_LLM or not scan_results:
         return None
-    
     try:
         # Configure Gemini API
         client = genai.Client(api_key=GEMINI_API_KEY)
@@ -243,6 +249,7 @@ Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. D
 def analyze_ticker(ticker, term_use=0):
     """Analyze a single ticker and return prediction probability"""
     try:
+        
         print(f"\n{ticker.replace('.IS', '')} analiz ediliyor...", flush=True)
         
         # -------------------------
@@ -284,7 +291,7 @@ def analyze_ticker(ticker, term_use=0):
         if len(data) < 50:  # Yeterli veri yoksa
             print(f"❌ {ticker.replace('.IS', '')}: Temizleme sonrası yetersiz veri ({len(data)} satır)", flush=True)
             return None
-
+        
         # -------------------------
         # 3. LSTM için Zaman Serisi
         # -------------------------
@@ -336,7 +343,7 @@ def analyze_ticker(ticker, term_use=0):
             return None
 
         # -------------------------
-        # 4. XGBoost ile Teknik + Sentiment
+        # 4. XGBoost ile Teknik
         # -------------------------
         try:
             features = ["rsi", "ema20", "ema50", "macd", "boll_high", "boll_low", "Volume"]
@@ -421,7 +428,7 @@ def quick_screen_ticker(ticker):
                 close = close.squeeze()
             if hasattr(volume, 'squeeze'):
                 volume = volume.squeeze()
-                
+            
         except Exception as e:
             print(f"⚠️ {ticker}: Veri yapısı hatası - {str(e)}", flush=True)
             return None
@@ -696,47 +703,60 @@ if __name__ == "__main__":
     # Sonuçları göster
     if results:
         print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!", flush=True)
-        
-        # LLM ile analiz et ve öneriler al
-        print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...", flush=True)
-        send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
-        
-        llm_analysis = analyze_with_llm(results)
-        
-        if llm_analysis:
-            print("\n" + "="*50, flush=True)
-            print("LLM ANALİZ VE ÖNERİLER:", flush=True)
-            print("="*50, flush=True)
-            print(llm_analysis, flush=True)
+        send_telegram_message_sync(f"✅ {len(results)} hisse başarıyla analiz edildi!")
+        if USE_LLM:
+            # LLM ile analiz et ve öneriler al
+            print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...", flush=True)
+            send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
+
+            llm_analysis = analyze_with_llm(results)
             
-            # LLM analizini parçalara bölerek Telegram'a gönder
-            header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-            footer = f"\n📊 <i>Bu analiz {len(results)} hissenin teknik verilerine dayanmaktadır.</i>\n⚠️ <i>Bu bir yatırım tavsiyesi değil, sadece teknik analiz yorumudur.</i>"
-            
-            paragraphs = llm_analysis.split('---')
-            
-            # Send all messages
-            for i, message in enumerate(paragraphs):
-                print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...", flush=True)
-                send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else message)
-            
-            if SEND_ADVANCED:
-                # İsteğe bağlı: Ham verileri de gönder
-                print("\n📊 Ham analiz verileri de gönderiliyor...", flush=True)
-                raw_data_message = format_telegram_message(results)
-                raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
-                send_telegram_message_sync(raw_data_message)
+            if llm_analysis:
+                print("\n" + "="*50, flush=True)
+                print("LLM ANALİZ VE ÖNERİLER:", flush=True)
+                print("="*50, flush=True)
+                print(llm_analysis, flush=True)
+                
+                # LLM analizini parçalara bölerek Telegram'a gönder
+                header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                footer = f"\n📊 <i>Bu analiz {len(results)} hissenin teknik verilerine dayanmaktadır.</i>\n⚠️ <i>Bu bir yatırım tavsiyesi değil, sadece teknik analiz yorumudur.</i>"
+                
+                paragraphs = llm_analysis.split('---')
+                
+                # Send all messages
+                for i, message in enumerate(paragraphs):
+                    print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...", flush=True)
+                    send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else message)
+                
+                if SEND_ADVANCED:
+                    # İsteğe bağlı: Ham verileri de gönder
+                    print("\n📊 Ham analiz verileri de gönderiliyor...", flush=True)
+                    raw_data_message = format_telegram_message(results)
+                    raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
+                    send_telegram_message_sync(raw_data_message)
+            else:
+                if SEND_ADVANCED:
+                    print("❌ LLM analizi başarısız, ham veriler gönderiliyor...", flush=True)
+                    send_telegram_message_sync("❌ LLM analizi başarısız, ham veriler gönderiliyor...")
+                    telegram_message = format_telegram_message(results)
+                    send_telegram_message_sync(telegram_message)
+                else:
+                    print("❌ LLM analizi başarısız!", flush=True)
+                    print("❌ Ayarlardan dolayı ham veriler gönderilmiyor...", flush=True)
+                    send_telegram_message_sync("❌ LLM analizi başarısız!")
+                    send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
             
         else:
             if SEND_ADVANCED:
-                print("❌ LLM analizi başarısız, ham veriler gönderiliyor...", flush=True)
-                # Fallback to original telegram message
+                print("❌ LLM analizi devre dışı, ham veriler gönderiliyor...", flush=True)
+                send_telegram_message_sync("❌ LLM analizi devre dışı, ham veriler gönderiliyor...")
                 telegram_message = format_telegram_message(results)
                 send_telegram_message_sync(telegram_message)
-            print("❌ LLM analizi başarısız...", flush=True)
-            
-            send_telegram_message_sync("❌ LLM analizi başarısız!")
-            send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
+            else:
+                print("❌ LLM analizi devre dışı!", flush=True)
+                print("❌ Ayarlardan dolayı ham veriler gönderilmiyor...", flush=True)
+                send_telegram_message_sync("❌ LLM analizi devre dışı!")
+                send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
         requests.get("https://uptime.betterstack.com/api/v1/heartbeat/B6JPnEGKx41uRTrWCfRZoJ5i")
     else:
         print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
@@ -747,7 +767,7 @@ if __name__ == "__main__":
     total_time = end_time - start_time
     minutes = int((total_time % 3600) // 60)
     seconds = int(total_time % 60)
-    
+    EXIT.set()
     time_message = f"⏱️ Toplam işlem süresi: {minutes:02d}:{seconds:02d}"
     print(f"\n{time_message}", flush=True)
     send_telegram_message_sync(time_message)
