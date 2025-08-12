@@ -18,12 +18,7 @@ tensorflow
 tf-keras
 keras
 
-# Natural Language Processing
-transformers
-torch
 
-# News Feed Processing
-feedparser
 
 # Telegram Bot
 python-telegram-bot

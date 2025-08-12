@@ -16,8 +16,6 @@ logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 import yfinance as yf
 import numpy as np
 import ta
-import feedparser
-from transformers import pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
@@ -25,6 +23,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 import xgboost as xgb
 from telegram import Bot
 from datetime import datetime
+import requests
 import asyncio
 import json
 import psutil
@@ -184,58 +183,7 @@ Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. D
         print(f"❌ LLM analizi hatası: {str(e)}", flush=True)
         return None
 
-# -------------------------
-# 1. Haber Sentiment Analizi
-# -------------------------
-# noinspection PyTypeChecker
-# Lazy loading for memory efficiency
-sentiment_model = None
 
-
-def get_sentiment_model():
-    """Lazy load sentiment model to save memory"""
-    global sentiment_model
-    if sentiment_model is None:
-        try:
-            # noinspection PyTypeChecker
-            sentiment_model = pipeline("sentiment-analysis", model="savasy/bert-base-turkish-sentiment-cased", device=-1, model_kwargs={"torch_dtype": "float16"})
-        except Exception as e:
-            print(f"⚠️ Sentiment model yüklenemedi: {e}", flush=True)
-            return None
-    return sentiment_model
-
-
-def get_news_sentiment(query):
-    """Get news sentiment with memory optimization"""
-    try:
-        model = get_sentiment_model()
-        if model is None:
-            return 0.5  # Fallback to neutral
-
-        feed_url = f"https://news.google.com/rss/search?q={query}+site:kap.org.tr&hl=tr&gl=TR&ceid=TR:tr"
-        feed = feedparser.parse(feed_url)
-        if not feed.entries:
-            return 0.5  # veri yoksa nötr
-
-        scores = []
-        # Limit to first 5 entries to save processing time
-        for entry in feed.entries[:5]:
-            try:
-                result = model(entry.title[:200])[0]  # Limit text length
-                label = result["label"]
-                score = result["score"]
-                if label.lower() == "positive":
-                    scores.append(score)
-                elif label.lower() == "negative":
-                    scores.append(1 - score)
-                else:
-                    scores.append(0.5)
-            except Exception:
-                scores.append(0.5)  # Neutral on error
-
-        return np.mean(scores) if scores else 0.5
-    except Exception:
-        return 0.5  # Fallback to neutral
 
 def analyze_ticker(ticker):
     """Analyze a single ticker and return prediction probability"""
@@ -279,24 +227,7 @@ def analyze_ticker(ticker):
             print(f"❌ {ticker}: Hedef değişken hesaplama hatası - {str(e)}", flush=True)
             return None
 
-        # Sentiment sütunu
-        try:
-            data["sentiment"] = 0.5
-            for i in range(len(data)):
-                if i == len(data)-1:  # son gün için canlı sentiment
-                    try:
-                        sentiment_score = get_news_sentiment(ticker.split(".")[0])
-                        print(f"  📊 {ticker.replace('.IS', '')}: Son gün sentiment puanı: %{sentiment_score*100:.1f}", flush=True)
-                        data.iloc[i, data.columns.get_loc("sentiment")] = sentiment_score
-                    except Exception as e:
-                        print(f"⚠️ {ticker}: Sentiment analizi hatası - {str(e)}, nötr değer kullanılıyor", flush=True)
-                        data.iloc[i, data.columns.get_loc("sentiment")] = 0.5
-                else:
-                    data.iloc[i, data.columns.get_loc("sentiment")] = 0.5
-            
-        except Exception as e:
-            print(f"❌ {ticker}: Sentiment hesaplama hatası - {str(e)}", flush=True)
-            return None
+
 
         data = data.dropna()
         
@@ -310,7 +241,7 @@ def analyze_ticker(ticker):
         try:
             seq_len = 20
             scaler = MinMaxScaler()
-            scaled_data = scaler.fit_transform(data[["Close", "Volume", "sentiment"]])
+            scaled_data = scaler.fit_transform(data[["Close", "Volume"]])
 
             X_lstm, y_lstm = [], []
             for i in range(len(scaled_data) - seq_len):
@@ -336,7 +267,7 @@ def analyze_ticker(ticker):
                 lstm_prob = 0.01  # Very low but not zero
             else:
                 lstm_model = Sequential()
-                lstm_model.add(LSTM(50, return_sequences=True, input_shape=(seq_len, 3)))
+                lstm_model.add(LSTM(50, return_sequences=True, input_shape=(seq_len, 2)))
                 lstm_model.add(Dropout(0.2))
                 lstm_model.add(LSTM(50))
                 lstm_model.add(Dropout(0.2))
@@ -356,7 +287,7 @@ def analyze_ticker(ticker):
         # 4. XGBoost ile Teknik + Sentiment
         # -------------------------
         try:
-            features = ["rsi", "ema20", "ema50", "macd", "boll_high", "boll_low", "Volume", "sentiment"]
+            features = ["rsi", "ema20", "ema50", "macd", "boll_high", "boll_low", "Volume"]
             X_xgb = data[features]
             y_xgb = data["target"]
 
@@ -703,6 +634,7 @@ if __name__ == "__main__":
             
             send_telegram_message_sync("❌ LLM analizi başarısız!")
             send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
+        requests.get("https://uptime.betterstack.com/api/v1/heartbeat/B6JPnEGKx41uRTrWCfRZoJ5i")
     else:
         print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
         send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
