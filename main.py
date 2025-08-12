@@ -74,7 +74,7 @@ async def log_memory_usage():
             pass
         await asyncio.sleep(5)
 
-asyncio.create_task(log_memory_usage())
+# Memory logging task will be started in main execution
 
 # Data caching system
 CACHE_DIR = Path("cache")
@@ -620,154 +620,170 @@ def format_telegram_message(scan_results):
 # -------------------------
 # Ana Program
 # -------------------------
-if __name__ == "__main__":
-    # Comprehensive BIST stock list - Updated with more valid active stocks
-    TICKERS = [
-        # BIST 30 Core Stocks
-        "THYAO.IS", "AKBNK.IS", "GARAN.IS", "ISCTR.IS", "KCHOL.IS", "SAHOL.IS",
-        "TCELL.IS", "TUPRS.IS", "BIMAS.IS", "ASELS.IS", "HALKB.IS", "VAKBN.IS",
-        "SISE.IS", "PETKM.IS", "KOZAL.IS", "KOZAA.IS", "EREGL.IS", "ARCLK.IS",
-        "TOASO.IS", "PGSUS.IS", "MGROS.IS", "TAVHL.IS", "OYAKC.IS", "DOHOL.IS",
-        
-        # Banking & Finance
-        "AKBNK.IS", "GARAN.IS", "HALKB.IS", "ISCTR.IS", "VAKBN.IS", "YKBNK.IS",
-        "TSKB.IS", "ICBCT.IS", "ALBRK.IS", "SKBNK.IS", "KLNMA.IS", "GOZDE.IS",
-        
-        # Technology & Software
-        "TCELL.IS", "TTKOM.IS", "NETAS.IS", "LOGO.IS", "KRONT.IS", "INDES.IS",
-        "ARENA.IS", "DESPC.IS", "SMART.IS", "LINK.IS", "ESCOM.IS", "PATEK.IS",
-        
-        # Industrial & Manufacturing (removed delisted: TRKCM)
-        "ASELS.IS", "EREGL.IS", "ARCLK.IS", "TOASO.IS", "OTKAR.IS", "FROTO.IS",
-        "KARSN.IS", "VESTL.IS", "CEMTS.IS", "AKSA.IS", "PARSN.IS",
-        "IHLAS.IS", "IHEVA.IS", "IHLGM.IS", "KARTN.IS", "KLMSN.IS", "KONYA.IS",
-        
-        # Energy & Utilities
-        "TUPRS.IS", "PETKM.IS", "TRGYO.IS", "AKSEN.IS", "AKENR.IS", "ZOREN.IS",
-        "ENKAI.IS", "GESAN.IS", "AYGAZ.IS", "ODAS.IS", "SNGYO.IS", "TKNSA.IS",
-        "ENJSA.IS", "EPLAS.IS", "EGGUB.IS", "EGSER.IS",
-        
-        # Retail & Consumer Goods (removed delisted: MIPAZ)
-        "BIMAS.IS", "MGROS.IS", "SOKM.IS", "MAVI.IS", "BIZIM.IS", "CRFSA.IS",
-        "ULKER.IS", "KNFRT.IS", "PETUN.IS", "MPARK.IS", "METUR.IS",
-        
-        # Construction & Real Estate
-        "TRGYO.IS", "GLYHO.IS", "RYGYO.IS", "VKGYO.IS", "ISGYO.IS", "AVGYO.IS",
-        "DGGYO.IS", "EKGYO.IS", "FMIZP.IS", "GRNYO.IS", "HLGYO.IS", "ISFIN.IS",
-        
-        # Healthcare & Pharmaceuticals
-        "SNGYO.IS", "DEVA.IS", "ECILC.IS", "LKMNH.IS", "SELEC.IS", "ALKIM.IS",
-        "DAGI.IS", "DOGUB.IS", "DURDO.IS", "ETYAT.IS",
-        
-        # Transportation & Logistics
-        "THYAO.IS", "PGSUS.IS", "CLEBI.IS", "DOCO.IS", "GSDHO.IS", "RYSAS.IS",
-        "BEYAZ.IS", "BLCYT.IS", "BSOKE.IS", "BTCIM.IS",
-        
-        # Chemicals & Materials (removed delisted: AKKIM, ALTIN, ANACM)
-        "GUBRF.IS", "BRSAN.IS", "BAGFS.IS", "DMSAS.IS", "PRKME.IS", "ALKIM.IS",
-        "AKMGY.IS", "ALCAR.IS", "ALKA.IS",
-        
-        # Textiles & Fashion
-        "YUNSA.IS", "BRMEN.IS", "DAGI.IS", "HATEK.IS", "KORDS.IS", "SNKRN.IS",
-        "ATEKS.IS", "ARSAN.IS", "BLCYT.IS", "BOSSA.IS", "BRKO.IS", "DESA.IS",
-        
-        # Food & Beverage (removed delisted: ALYAG, KERVT)
-        "ULKER.IS", "CCOLA.IS", "AEFES.IS", "BANVT.IS", "KENT.IS", "PINSU.IS",
-        "AVOD.IS", "BANVT.IS", "CCOLA.IS", "ERSU.IS",
-        
-        # Mining & Metals (removed delisted: DGKLB)
-        "KOZAL.IS", "KOZAA.IS", "CMENT.IS", "DOCO.IS",
-        "EGEEN.IS", "EGEPO.IS", "EGSER.IS", "ERBOS.IS", "ETYAT.IS", "FENER.IS",
-        
-        # Media & Entertainment
-        "IHLAS.IS", "IHEVA.IS", "IHLGM.IS", "IHYAY.IS", "INTEM.IS", "ISBIR.IS",
-        
-        # Additional High-Volume Stocks
-        "ADEL.IS", "ADESE.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS",
-        "AGROT.IS", "AHGAZ.IS", "AKFGY.IS", "AKFYE.IS", "AKMGY.IS", "AKSGY.IS",
-        "AKSUE.IS", "AKYHO.IS", "ALARK.IS", "ALBRK.IS", "ALCAR.IS", "ALCTL.IS"
-    ]
+async def main():
+    """Main async function to run analysis with background memory logging"""
+    # Start memory logging in background
+    memory_task = asyncio.create_task(log_memory_usage())
     
-    # Remove duplicates and sort
-    TICKERS = sorted(list(set(TICKERS)))
-    
-    print("🚀 Çoklu hisse analizi başlatılıyor...", flush=True)
-    print(f"🚀 Hedef: %{target * 100:.1f} artış", flush=True)
-    print(f"📋 Analiz edilecek hisseler: {', '.join([t.replace('.IS', '') for t in TICKERS])}", flush=True)
-    send_telegram_message_sync("🚀 Çoklu hisse analizi başlatılıyor...")
-    send_telegram_message_sync(f"🚀 Hedef: %{target * 100:.1f} artış")
-    send_telegram_message_sync(f"📋 {len(TICKERS)} hisse analiz edilecek")
-    # Analiz yap
-    results = analyze_multiple_tickers(TICKERS)
-    
-    # Sonuçları göster
-    if results:
-        print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!", flush=True)
-        send_telegram_message_sync(f"✅ {len(results)} hisse başarıyla analiz edildi!")
-        if USE_LLM:
-            # LLM ile analiz et ve öneriler al
-            print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...", flush=True)
-            send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
+    try:
+        # Comprehensive BIST stock list - Updated with more valid active stocks
+        TICKERS = [
+            # BIST 30 Core Stocks
+            "THYAO.IS", "AKBNK.IS", "GARAN.IS", "ISCTR.IS", "KCHOL.IS", "SAHOL.IS",
+            "TCELL.IS", "TUPRS.IS", "BIMAS.IS", "ASELS.IS", "HALKB.IS", "VAKBN.IS",
+            "SISE.IS", "PETKM.IS", "KOZAL.IS", "KOZAA.IS", "EREGL.IS", "ARCLK.IS",
+            "TOASO.IS", "PGSUS.IS", "MGROS.IS", "TAVHL.IS", "OYAKC.IS", "DOHOL.IS",
 
-            llm_analysis = analyze_with_llm(results)
-            
-            if llm_analysis:
-                print("\n" + "="*50, flush=True)
-                print("LLM ANALİZ VE ÖNERİLER:", flush=True)
-                print("="*50, flush=True)
-                print(llm_analysis, flush=True)
+            # Banking & Finance
+            "AKBNK.IS", "GARAN.IS", "HALKB.IS", "ISCTR.IS", "VAKBN.IS", "YKBNK.IS",
+            "TSKB.IS", "ICBCT.IS", "ALBRK.IS", "SKBNK.IS", "KLNMA.IS", "GOZDE.IS",
+
+            # Technology & Software
+            "TCELL.IS", "TTKOM.IS", "NETAS.IS", "LOGO.IS", "KRONT.IS", "INDES.IS",
+            "ARENA.IS", "DESPC.IS", "SMART.IS", "LINK.IS", "ESCOM.IS", "PATEK.IS",
+
+            # Industrial & Manufacturing (removed delisted: TRKCM)
+            "ASELS.IS", "EREGL.IS", "ARCLK.IS", "TOASO.IS", "OTKAR.IS", "FROTO.IS",
+            "KARSN.IS", "VESTL.IS", "CEMTS.IS", "AKSA.IS", "PARSN.IS",
+            "IHLAS.IS", "IHEVA.IS", "IHLGM.IS", "KARTN.IS", "KLMSN.IS", "KONYA.IS",
+
+            # Energy & Utilities
+            "TUPRS.IS", "PETKM.IS", "TRGYO.IS", "AKSEN.IS", "AKENR.IS", "ZOREN.IS",
+            "ENKAI.IS", "GESAN.IS", "AYGAZ.IS", "ODAS.IS", "SNGYO.IS", "TKNSA.IS",
+            "ENJSA.IS", "EPLAS.IS", "EGGUB.IS", "EGSER.IS",
+
+            # Retail & Consumer Goods (removed delisted: MIPAZ)
+            "BIMAS.IS", "MGROS.IS", "SOKM.IS", "MAVI.IS", "BIZIM.IS", "CRFSA.IS",
+            "ULKER.IS", "KNFRT.IS", "PETUN.IS", "MPARK.IS", "METUR.IS",
+
+            # Construction & Real Estate
+            "TRGYO.IS", "GLYHO.IS", "RYGYO.IS", "VKGYO.IS", "ISGYO.IS", "AVGYO.IS",
+            "DGGYO.IS", "EKGYO.IS", "FMIZP.IS", "GRNYO.IS", "HLGYO.IS", "ISFIN.IS",
+
+            # Healthcare & Pharmaceuticals
+            "SNGYO.IS", "DEVA.IS", "ECILC.IS", "LKMNH.IS", "SELEC.IS", "ALKIM.IS",
+            "DAGI.IS", "DOGUB.IS", "DURDO.IS", "ETYAT.IS",
+
+            # Transportation & Logistics
+            "THYAO.IS", "PGSUS.IS", "CLEBI.IS", "DOCO.IS", "GSDHO.IS", "RYSAS.IS",
+            "BEYAZ.IS", "BLCYT.IS", "BSOKE.IS", "BTCIM.IS",
+
+            # Chemicals & Materials (removed delisted: AKKIM, ALTIN, ANACM)
+            "GUBRF.IS", "BRSAN.IS", "BAGFS.IS", "DMSAS.IS", "PRKME.IS", "ALKIM.IS",
+            "AKMGY.IS", "ALCAR.IS", "ALKA.IS",
+
+            # Textiles & Fashion
+            "YUNSA.IS", "BRMEN.IS", "DAGI.IS", "HATEK.IS", "KORDS.IS", "SNKRN.IS",
+            "ATEKS.IS", "ARSAN.IS", "BLCYT.IS", "BOSSA.IS", "BRKO.IS", "DESA.IS",
+
+            # Food & Beverage (removed delisted: ALYAG, KERVT)
+            "ULKER.IS", "CCOLA.IS", "AEFES.IS", "BANVT.IS", "KENT.IS", "PINSU.IS",
+            "AVOD.IS", "BANVT.IS", "CCOLA.IS", "ERSU.IS",
+
+            # Mining & Metals (removed delisted: DGKLB)
+            "KOZAL.IS", "KOZAA.IS", "CMENT.IS", "DOCO.IS",
+            "EGEEN.IS", "EGEPO.IS", "EGSER.IS", "ERBOS.IS", "ETYAT.IS", "FENER.IS",
+
+            # Media & Entertainment
+            "IHLAS.IS", "IHEVA.IS", "IHLGM.IS", "IHYAY.IS", "INTEM.IS", "ISBIR.IS",
+
+            # Additional High-Volume Stocks
+            "ADEL.IS", "ADESE.IS", "AEFES.IS", "AFYON.IS", "AGESA.IS", "AGHOL.IS",
+            "AGROT.IS", "AHGAZ.IS", "AKFGY.IS", "AKFYE.IS", "AKMGY.IS", "AKSGY.IS",
+            "AKSUE.IS", "AKYHO.IS", "ALARK.IS", "ALBRK.IS", "ALCAR.IS", "ALCTL.IS"
+        ]
+    
+        # Remove duplicates and sort
+        TICKERS = sorted(list(set(TICKERS)))
+        
+        print("🚀 Çoklu hisse analizi başlatılıyor...", flush=True)
+        print(f"🚀 Hedef: %{target * 100:.1f} artış", flush=True)
+        print(f"📋 Analiz edilecek hisseler: {', '.join([t.replace('.IS', '') for t in TICKERS])}", flush=True)
+        send_telegram_message_sync("🚀 Çoklu hisse analizi başlatılıyor...")
+        send_telegram_message_sync(f"🚀 Hedef: %{target * 100:.1f} artış")
+        send_telegram_message_sync(f"📋 {len(TICKERS)} hisse analiz edilecek")
+        # Analiz yap
+        results = analyze_multiple_tickers(TICKERS)
+        
+        # Sonuçları göster
+        if results:
+            print(f"\n✅ {len(results)} hisse başarıyla analiz edildi!", flush=True)
+            send_telegram_message_sync(f"✅ {len(results)} hisse başarıyla analiz edildi!")
+            if USE_LLM:
+                # LLM ile analiz et ve öneriler al
+                print("\n🤖 LLM ile analiz ve öneriler hazırlanıyor...", flush=True)
+                send_telegram_message_sync("🤖 LLM ile analiz ve öneriler hazırlanıyor...")
+
+                llm_analysis = analyze_with_llm(results)
                 
-                # LLM analizini parçalara bölerek Telegram'a gönder
-                header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-                footer = f"\n📊 <i>Bu analiz {len(results)} hissenin teknik verilerine dayanmaktadır.</i>\n⚠️ <i>Bu bir yatırım tavsiyesi değil, sadece teknik analiz yorumudur.</i>"
+                if llm_analysis:
+                    print("\n" + "="*50, flush=True)
+                    print("LLM ANALİZ VE ÖNERİLER:", flush=True)
+                    print("="*50, flush=True)
+                    print(llm_analysis, flush=True)
+                    
+                    # LLM analizini parçalara bölerek Telegram'a gönder
+                    header = f"🤖 <b>AI Analiz ve Yatırım Önerileri</b>\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+                    footer = f"\n📊 <i>Bu analiz {len(results)} hissenin teknik verilerine dayanmaktadır.</i>\n⚠️ <i>Bu bir yatırım tavsiyesi değil, sadece teknik analiz yorumudur.</i>"
+                    
+                    paragraphs = llm_analysis.split('---')
+                    
+                    # Send all messages
+                    for i, message in enumerate(paragraphs):
+                        print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...", flush=True)
+                        send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else header + message if i == 0 else message)
+                    
+                    if SEND_ADVANCED:
+                        # İsteğe bağlı: Ham verileri de gönder
+                        print("\n📊 Ham analiz verileri de gönderiliyor...", flush=True)
+                        raw_data_message = format_telegram_message(results)
+                        raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
+                        send_telegram_message_sync(raw_data_message)
+                else:
+                    if SEND_ADVANCED:
+                        print("❌ LLM analizi başarısız, ham veriler gönderiliyor...", flush=True)
+                        send_telegram_message_sync("❌ LLM analizi başarısız, ham veriler gönderiliyor...")
+                        telegram_message = format_telegram_message(results)
+                        send_telegram_message_sync(telegram_message)
+                    else:
+                        print("❌ LLM analizi başarısız!", flush=True)
+                        print("❌ Ayarlardan dolayı ham veriler gönderilmiyor...", flush=True)
+                        send_telegram_message_sync("❌ LLM analizi başarısız!")
+                        send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
                 
-                paragraphs = llm_analysis.split('---')
-                
-                # Send all messages
-                for i, message in enumerate(paragraphs):
-                    print(f"📤 LLM mesajı {i+1}/{len(paragraphs)} gönderiliyor...", flush=True)
-                    send_telegram_message_sync(message + footer if i == len(paragraphs) - 1 else message)
-                
-                if SEND_ADVANCED:
-                    # İsteğe bağlı: Ham verileri de gönder
-                    print("\n📊 Ham analiz verileri de gönderiliyor...", flush=True)
-                    raw_data_message = format_telegram_message(results)
-                    raw_data_message = f"📊 <b>Ham Teknik Analiz Verileri</b>\n\n{raw_data_message}"
-                    send_telegram_message_sync(raw_data_message)
             else:
                 if SEND_ADVANCED:
-                    print("❌ LLM analizi başarısız, ham veriler gönderiliyor...", flush=True)
-                    send_telegram_message_sync("❌ LLM analizi başarısız, ham veriler gönderiliyor...")
+                    print("❌ LLM analizi devre dışı, ham veriler gönderiliyor...", flush=True)
+                    send_telegram_message_sync("❌ LLM analizi devre dışı, ham veriler gönderiliyor...")
                     telegram_message = format_telegram_message(results)
                     send_telegram_message_sync(telegram_message)
                 else:
-                    print("❌ LLM analizi başarısız!", flush=True)
+                    print("❌ LLM analizi devre dışı!", flush=True)
                     print("❌ Ayarlardan dolayı ham veriler gönderilmiyor...", flush=True)
-                    send_telegram_message_sync("❌ LLM analizi başarısız!")
+                    send_telegram_message_sync("❌ LLM analizi devre dışı!")
                     send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
-            
+            requests.get("https://uptime.betterstack.com/api/v1/heartbeat/B6JPnEGKx41uRTrWCfRZoJ5i")
         else:
-            if SEND_ADVANCED:
-                print("❌ LLM analizi devre dışı, ham veriler gönderiliyor...", flush=True)
-                send_telegram_message_sync("❌ LLM analizi devre dışı, ham veriler gönderiliyor...")
-                telegram_message = format_telegram_message(results)
-                send_telegram_message_sync(telegram_message)
-            else:
-                print("❌ LLM analizi devre dışı!", flush=True)
-                print("❌ Ayarlardan dolayı ham veriler gönderilmiyor...", flush=True)
-                send_telegram_message_sync("❌ LLM analizi devre dışı!")
-                send_telegram_message_sync("❌ Ayarlardan dolayı ham veriler gönderilmiyor...")
-        requests.get("https://uptime.betterstack.com/api/v1/heartbeat/B6JPnEGKx41uRTrWCfRZoJ5i")
-    else:
-        print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
-        send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
-    
-    # End time measurement and display total process time
-    end_time = time.time()
-    total_time = end_time - start_time
-    minutes = int((total_time % 3600) // 60)
-    seconds = int(total_time % 60)
-    EXIT.set()
-    time_message = f"⏱️ Toplam işlem süresi: {minutes:02d}:{seconds:02d}"
-    print(f"\n{time_message}", flush=True)
-    send_telegram_message_sync(time_message)
+            print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
+            send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
+        
+    finally:
+        # Stop memory logging
+        EXIT.set()
+        memory_task.cancel()
+        try:
+            await memory_task
+        except asyncio.CancelledError:
+            pass
+
+        # End time measurement and display total process time
+        end_time = time.time()
+        total_time = end_time - start_time
+        minutes = int((total_time % 3600) // 60)
+        seconds = int(total_time % 60)
+        time_message = f"⏱️ Toplam işlem süresi: {minutes:02d}:{seconds:02d}"
+        print(f"\n{time_message}", flush=True)
+        send_telegram_message_sync(time_message)
+
+if __name__ == "__main__":
+    asyncio.run(main())
