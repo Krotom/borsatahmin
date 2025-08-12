@@ -39,7 +39,7 @@ from google import genai
 SEND = int(os.environ.get("SEND", 1))
 SEND_ADVANCED = int(os.environ.get("SEND_ADVANCED", 0))
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8389484759:AAEzi-nJxb-OHwEo3lg5i8m1tv3eiY3Np4k")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "7950923465:AAFHznvCCp9-X99fqdX2RahAO7l92s5PIfE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
 
 # -------------------------
