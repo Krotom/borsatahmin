@@ -2,6 +2,9 @@ import os
 import warnings
 import logging
 import gc
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import pickle
+from pathlib import Path
 
 # Suppress warnings and logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TensorFlow logs
@@ -23,6 +26,7 @@ from tensorflow.keras.layers import LSTM, Dense, Dropout
 import xgboost as xgb
 from telegram import Bot
 from datetime import datetime
+from typing import Any
 import requests
 import asyncio
 import json
@@ -60,6 +64,55 @@ def log_memory_usage():
         return memory_mb
     except Exception:
         return 0
+
+# Data caching system
+CACHE_DIR = Path("cache")
+CACHE_DIR.mkdir(exist_ok=True)
+
+def get_cache_path(ticker, period):
+    """Get cache file path for ticker data"""
+    return CACHE_DIR / f"{ticker}_{period}.pkl"
+
+def load_cached_data(ticker, period, max_age_hours=1):
+    """Load cached data if it exists and is recent enough"""
+    cache_path = get_cache_path(ticker, period)
+    if cache_path.exists():
+        try:
+            # Check file age
+            file_age = datetime.now().timestamp() - cache_path.stat().st_mtime
+            if file_age < max_age_hours * 3600:  # Convert hours to seconds
+                with open(cache_path, 'rb') as f:
+                    return pickle.load(f)
+        except Exception:
+            pass
+    return None
+
+def save_cached_data(ticker, period, data):
+    """Save data to cache"""
+    try:
+        cache_path = get_cache_path(ticker, period)
+        with open(cache_path, 'wb') as f:
+            f: Any
+            pickle.dump(data, f)
+    except Exception:
+        pass
+
+def download_with_cache(ticker, period="1y", max_age_hours=1):
+    """Download data with caching support"""
+    # Try to load from cache first
+    cached_data = load_cached_data(ticker, period, max_age_hours)
+    if cached_data is not None:
+        return cached_data
+    
+    # Download fresh data
+    try:
+        data = yf.download(ticker, period=period, progress=False, auto_adjust=True, threads=False)
+        # Save to cache
+        save_cached_data(ticker, period, data)
+        return data
+    except Exception as e:
+        print(f"❌ {ticker}: Veri indirme hatası - {str(e)}", flush=True)
+        return None
 
 async def send_telegram_message(msg):
     """Send message via Telegram bot using python-telegram-bot"""
@@ -184,7 +237,6 @@ Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. D
         return None
 
 
-
 def analyze_ticker(ticker):
     """Analyze a single ticker and return prediction probability"""
     try:
@@ -193,11 +245,8 @@ def analyze_ticker(ticker):
         # -------------------------
         # 2. Fiyat Verisi ve Teknikler
         # -------------------------
-        try:
-            data = yf.download(ticker, period="1y", progress=False,
-                               auto_adjust=True, threads=False)
-        except Exception as e:
-            print(f"❌ {ticker.replace('.IS', '')}: Veri indirme hatası - {str(e)}", flush=True)
+        data = download_with_cache(ticker)
+        if data is None:
             return None
         
         if data.empty:
@@ -226,8 +275,6 @@ def analyze_ticker(ticker):
         except Exception as e:
             print(f"❌ {ticker}: Hedef değişken hesaplama hatası - {str(e)}", flush=True)
             return None
-
-
 
         data = data.dropna()
         
@@ -267,14 +314,16 @@ def analyze_ticker(ticker):
                 lstm_prob = 0.01  # Very low but not zero
             else:
                 lstm_model = Sequential()
-                lstm_model.add(LSTM(50, return_sequences=True, input_shape=(seq_len, 2)))
-                lstm_model.add(Dropout(0.2))
-                lstm_model.add(LSTM(50))
-                lstm_model.add(Dropout(0.2))
+                lstm_model.add(LSTM(32, return_sequences=True, input_shape=(seq_len, 2)))  # Reduced units
+                lstm_model.add(Dropout(0.3))
+                lstm_model.add(LSTM(32))  # Reduced units
+                lstm_model.add(Dropout(0.3))
                 lstm_model.add(Dense(1, activation="sigmoid"))
                 lstm_model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
                 
-                lstm_model.fit(X_train_lstm, y_train_lstm, epochs=20, batch_size=8, verbose=0)
+                # Adaptive epochs based on data size for efficiency
+                epochs = min(15, max(5, len(X_train_lstm) // 10))
+                lstm_model.fit(X_train_lstm, y_train_lstm, epochs=epochs, batch_size=16, verbose=0)
                 # Get LSTM prediction
                 last_lstm_input = np.array([scaled_data[-seq_len:]])
                 lstm_prob = lstm_model.predict(last_lstm_input, verbose=0)[0][0]
@@ -293,7 +342,17 @@ def analyze_ticker(ticker):
 
             X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb = train_test_split(X_xgb, y_xgb, test_size=0.2, shuffle=False)
 
-            xgb_model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.05, max_depth=5, random_state=42, base_score=0.5)
+            # Optimized XGBoost parameters for speed vs accuracy balance
+            n_estimators = min(80, max(30, len(X_train_xgb) // 5))  # Adaptive estimators
+            xgb_model = xgb.XGBClassifier(
+                n_estimators=n_estimators, 
+                learning_rate=0.1,  # Slightly higher for faster convergence
+                max_depth=4,  # Reduced depth for speed
+                random_state=42, 
+                base_score=0.5,
+                n_jobs=1,  # Single thread to avoid conflicts in parallel processing
+                verbosity=0
+            )
             xgb_model.fit(X_train_xgb, y_train_xgb)
 
             # -------------------------
@@ -310,6 +369,12 @@ def analyze_ticker(ticker):
         
         current_price = data["Close"].iloc[-1].item()
         
+        # Clean up memory
+        del data, X_lstm, y_lstm, X_train_lstm, X_test_lstm, y_train_lstm, y_test_lstm
+        del X_xgb, y_xgb, X_train_xgb, X_test_xgb, y_train_xgb, y_test_xgb
+        del lstm_model, xgb_model, scaler, scaled_data
+        gc.collect()
+        
         return {
             "ticker": ticker,
             "probability": final_prob,
@@ -320,14 +385,15 @@ def analyze_ticker(ticker):
         
     except Exception as e:
         print(f"{ticker} analiz hatası: {e}", flush=True)
+        gc.collect()  # Clean up on error too
         return None
 
 def quick_screen_ticker(ticker):
     """Quick screening using basic technical indicators"""
     try:
-        # Download only recent data for speed
-        data = yf.download(ticker, period="3mo", progress=False)
-        if data.empty or len(data) < 20:
+        # Download only recent data for speed with caching
+        data = download_with_cache(ticker, period="3mo", max_age_hours=2)
+        if data is None or data.empty or len(data) < 20:
             return None
             
         # Quick technical indicators
@@ -378,23 +444,34 @@ def analyze_multiple_tickers(tickers):
     print("🔍 Hızlı tarama başlatılıyor...", flush=True)
     send_telegram_message_sync("🔍 Hızlı tarama başlatılıyor...")
     
-    # Stage 1: Quick screening
+    # Stage 1: Quick screening with parallel processing
     screening_results = []
-    for ticker in tickers:
-        result = quick_screen_ticker(ticker)
-        if result:
-            screening_results.append(result)
+    max_workers = min(8, len(tickers))  # Limit concurrent connections
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all screening tasks
+        future_to_ticker = {executor.submit(quick_screen_ticker, ticker): ticker for ticker in tickers}
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                result = future.result()
+                if result:
+                    screening_results.append(result)
+            except Exception as e:
+                print(f"⚠️ {ticker}: Tarama hatası - {str(e)}", flush=True)
     
     # Sort by score and select top candidates
     screening_results.sort(key=lambda x: x["score"], reverse=True)
     
-    # Select top candidates - be more selective
-    # First try score >= 3, then top 15 if not enough
+    # Select top candidates - optimized selection
+    # First try score >= 3, then top candidates if not enough
     promising_tickers = [r for r in screening_results if r["score"] >= 3]
     if len(promising_tickers) < 5:
-        promising_tickers = [r for r in screening_results if r["score"] >= 2][:15]
-    if len(promising_tickers) > 20:  # Cap at 10 for efficiency
-        promising_tickers = promising_tickers[:10]
+        promising_tickers = [r for r in screening_results if r["score"] >= 2][:12]
+    if len(promising_tickers) > 15:  # Cap at 15 for optimal speed/accuracy balance
+        promising_tickers = promising_tickers[:15]
     
     print(f"📊 Tarama tamamlandı: {len(screening_results)} hisse tarandı", flush=True)
     print(f"🎯 Detaylı analiz için seçilen: {len(promising_tickers)} hisse", flush=True)
