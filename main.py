@@ -36,8 +36,8 @@ from google import genai
 # -------------------------
 # Telegram Bot Configuration
 # -------------------------
-SEND = bool(os.environ.get("SEND", 1))
-SEND_ADVANCED = bool(os.environ.get("SEND_ADVANCED", 0))
+SEND = int(os.environ.get("SEND", 1))
+SEND_ADVANCED = int(os.environ.get("SEND_ADVANCED", 0))
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8389484759:AAEzi-nJxb-OHwEo3lg5i8m1tv3eiY3Np4k")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
@@ -47,7 +47,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "-1002758348312")
 # -------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyD0xR1DWKj4IANbS2-DF1zdwtStlOclSK8")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
-USE_LLM = bool(os.environ.get("USE_LLM", True))
+USE_LLM = int(os.environ.get("USE_LLM", 1))
 
 target_percent = int(os.environ.get("TARGET_PERCENT", 0))
 # 2 - %15, 1 - %10, 0 - %5, -1 - %3
