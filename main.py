@@ -1,3 +1,7 @@
+# Start time measurement
+import time
+start_time = time.time()
+
 import os
 import warnings
 import logging
@@ -737,3 +741,13 @@ if __name__ == "__main__":
     else:
         print("❌ Hiçbir hisse analiz edilemedi!", flush=True)
         send_telegram_message_sync("❌ Hiçbir hisse analiz edilemedi!")
+    
+    # End time measurement and display total process time
+    end_time = time.time()
+    total_time = end_time - start_time
+    minutes = int((total_time % 3600) // 60)
+    seconds = int(total_time % 60)
+    
+    time_message = f"⏱️ Toplam işlem süresi: {minutes:02d}:{seconds:02d}"
+    print(f"\n{time_message}", flush=True)
+    send_telegram_message_sync(time_message)
