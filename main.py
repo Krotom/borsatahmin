@@ -237,7 +237,7 @@ Yanıtını Türkçe olarak, yatırımcılar için anlaşılır bir dilde ver. D
         return None
 
 
-def analyze_ticker(ticker):
+def analyze_ticker(ticker, term_use=0):
     """Analyze a single ticker and return prediction probability"""
     try:
         print(f"\n{ticker.replace('.IS', '')} analiz ediliyor...", flush=True)
@@ -375,13 +375,20 @@ def analyze_ticker(ticker):
         del lstm_model, xgb_model, scaler, scaled_data
         gc.collect()
         
-        return {
-            "ticker": ticker,
-            "probability": final_prob,
-            "current_price": current_price,
-            "lstm_prob": lstm_prob,
-            "xgb_prob": xgb_prob
-        }
+        if term_use != 1:
+            return {
+                "ticker": ticker,
+                "probability": final_prob,
+                "current_price": current_price,
+                "lstm_prob": lstm_prob,
+                "xgb_prob": xgb_prob
+            }
+        else:
+            print(f"{ticker} Analizi Sonucu")
+            print("Tavan yüzdesi: ", final_prob * 100)
+            print("Güncel fiyat: ", current_price)
+            print("LSTM tahmini: ", lstm_prob * 100)
+            print("XGBoost tahmini: ", xgb_prob * 100)
         
     except Exception as e:
         print(f"{ticker} analiz hatası: {e}", flush=True)
@@ -424,7 +431,7 @@ def quick_screen_ticker(ticker):
             score += 1
         if price_change_5d > 0:  # Positive momentum
             score += 1
-            
+        
         return {
             "ticker": ticker,
             "score": score,
