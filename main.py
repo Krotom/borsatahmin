@@ -33,7 +33,8 @@ from telegram import Bot
 from datetime import datetime
 from typing import Any
 import requests
-from threading import Event
+import time
+import threading
 import asyncio
 import json
 import psutil
@@ -55,14 +56,14 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyD0xR1DWKj4IANbS2-DF1zdw
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-2.5-flash-lite")
 USE_LLM = int(os.environ.get("USE_LLM", 1))
 
-EXIT = Event()
+EXIT = threading.Event()
 
 target_percent = int(os.environ.get("TARGET_PERCENT", 0))
 # 2 - %15, 1 - %10, 0 - %5, -1 - %3
 
 target = 0.149 if target_percent == 2 else 0.099 if target_percent == 1 else 0.049 if target_percent == 0 else 0.029
 
-async def log_memory_usage():
+def log_memory_usage():
     """Log current memory usage for monitoring"""
     while not EXIT.is_set():
         try:
@@ -72,9 +73,9 @@ async def log_memory_usage():
             print(f"🔧 Bellek kullanımı: {memory_mb:.1f} MB", flush=True)
         except Exception:
             pass
-        await asyncio.sleep(5)
-
-asyncio.run(log_memory_usage())
+        time.sleep(5)
+memlogger = threading.Thread(target=log_memory_usage)
+memlogger.start()
 
 # Data caching system
 CACHE_DIR = Path("cache")
@@ -771,3 +772,4 @@ if __name__ == "__main__":
     time_message = f"⏱️ Toplam işlem süresi: {minutes:02d}:{seconds:02d}"
     print(f"\n{time_message}", flush=True)
     send_telegram_message_sync(time_message)
+    memlogger.join()
