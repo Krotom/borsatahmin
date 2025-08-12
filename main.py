@@ -169,8 +169,7 @@ def edit_telegram_message_sync(message_id, new_text):
         if TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN_HERE" and TELEGRAM_CHAT_ID != "YOUR_CHAT_ID_HERE":
             return asyncio.run(edit_telegram_message(message_id, new_text))
         else:
-            print("⚠️  Telegram bot ayarları yapılmamış. Lütfen TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID değerlerini güncelleyin.", flush=True)
-            print("📦 Gerekli paket: pip install python-telegram-bot", flush=True)
+            return False
     except Exception as e:
         print(f"Telegram mesaj gönderme hatası: {e}", flush=True)
         return False
@@ -403,9 +402,25 @@ def quick_screen_ticker(ticker):
         if data is None or data.empty or len(data) < 20:
             return None
             
-        # Quick technical indicators
-        close = data["Close"].squeeze()
-        volume = data["Volume"].squeeze()
+        # Quick technical indicators - handle multi-dimensional data
+        try:
+            # Handle potential MultiIndex columns from yfinance
+            if hasattr(data.columns, 'levels'):  # MultiIndex columns
+                close = data.iloc[:, data.columns.get_level_values(0) == 'Close'].iloc[:, 0]
+                volume = data.iloc[:, data.columns.get_level_values(0) == 'Volume'].iloc[:, 0]
+            else:
+                close = data["Close"]
+                volume = data["Volume"]
+            
+            # Ensure 1-dimensional Series
+            if hasattr(close, 'squeeze'):
+                close = close.squeeze()
+            if hasattr(volume, 'squeeze'):
+                volume = volume.squeeze()
+                
+        except Exception as e:
+            print(f"⚠️ {ticker}: Veri yapısı hatası - {str(e)}", flush=True)
+            return None
         
         # Basic momentum indicators
         rsi = ta.momentum.RSIIndicator(close).rsi().iloc[-1]
